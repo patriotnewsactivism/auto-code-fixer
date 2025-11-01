@@ -12,12 +12,14 @@ interface Task {
 
 interface TaskQueueProps {
   tasks: Task[];
+  onSelectTask?: (taskId: string) => void;
+  selectedTaskId?: string | null;
 }
 
-export const TaskQueue = ({ tasks }: TaskQueueProps) => {
+export const TaskQueue = ({ tasks, onSelectTask, selectedTaskId }: TaskQueueProps) => {
   const pendingTasks = tasks.filter(
-    (t) => t.status === "pending" || t.status === "processing"
-  );
+    (t) => t.status === "pending" || t.status === "processing" || t.status === "completed"
+  ).slice(0, 10);
 
   return (
     <Card className="p-4 bg-card border-border">
@@ -28,8 +30,16 @@ export const TaskQueue = ({ tasks }: TaskQueueProps) => {
         <p className="text-sm text-muted-foreground">No pending tasks</p>
       ) : (
         <div className="space-y-2">
-          {pendingTasks.slice(0, 5).map((task) => (
-            <div key={task.id} className="p-2 rounded bg-secondary">
+          {pendingTasks.map((task) => (
+            <div 
+              key={task.id} 
+              onClick={() => onSelectTask?.(task.id)}
+              className={`p-2 rounded cursor-pointer transition-colors ${
+                selectedTaskId === task.id 
+                  ? "bg-primary/20 border border-primary" 
+                  : "bg-secondary hover:bg-secondary/80"
+              }`}
+            >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1">
                   <p className="text-sm font-medium">{task.title}</p>
@@ -37,7 +47,14 @@ export const TaskQueue = ({ tasks }: TaskQueueProps) => {
                     {task.description}
                   </p>
                 </div>
-                <Badge variant={task.status === "processing" ? "default" : "outline"} className="text-xs">
+                <Badge 
+                  variant={
+                    task.status === "processing" ? "default" : 
+                    task.status === "completed" ? "default" :
+                    "outline"
+                  } 
+                  className="text-xs"
+                >
                   {task.status}
                 </Badge>
               </div>

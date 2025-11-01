@@ -2,3 +2,9 @@ project_id = "uxgmziujgesdswtjdasu"
 
 [functions.process-task]
 verify_jwt = true
+
+[functions.generate-code]
+verify_jwt = true
+
+[functions.commit-to-github]
+verify_jwt = true

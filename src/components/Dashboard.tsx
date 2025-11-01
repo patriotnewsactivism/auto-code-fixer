@@ -7,6 +7,8 @@ import { TaskQueue } from "./TaskQueue";
 import { Statistics } from "./Statistics";
 import { VoiceControl } from "./VoiceControl";
 import { ConfigDialog } from "./ConfigDialog";
+import { CodePreview } from "./CodePreview";
+import { GitHubSetup } from "./GitHubSetup";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useRealtimeData } from "@/hooks/useRealtimeData";
@@ -21,6 +23,7 @@ export const Dashboard = () => {
   const [taskInput, setTaskInput] = useState("");
   const [configOpen, setConfigOpen] = useState(false);
   const [voiceActive, setVoiceActive] = useState(false);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -62,9 +65,18 @@ export const Dashboard = () => {
 
       if (error) throw error;
 
-      // Trigger processing if system is running
+      // Set as selected task for preview
+      setSelectedTaskId(data.id);
+
+      // Trigger code generation if system is running
       if (isRunning && data) {
+        // First process the task
         await supabase.functions.invoke("process-task", {
+          body: { taskId: data.id },
+        });
+
+        // Then generate code
+        await supabase.functions.invoke("generate-code", {
           body: { taskId: data.id },
         });
       }
@@ -147,8 +159,13 @@ export const Dashboard = () => {
         <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
           {/* Sidebar */}
           <aside className="space-y-6">
+            <GitHubSetup userId={user.id} />
             <ActiveAgents agents={agents} />
-            <TaskQueue tasks={tasks} />
+            <TaskQueue 
+              tasks={tasks}
+              onSelectTask={(taskId) => setSelectedTaskId(taskId)}
+              selectedTaskId={selectedTaskId}
+            />
             <Statistics stats={stats} />
             <VoiceControl 
               isActive={voiceActive}
@@ -225,27 +242,34 @@ export const Dashboard = () => {
               </div>
             </Card>
 
-            {/* Status Card */}
-            <Card className="p-4 bg-card border-border">
-              <div className="flex gap-3">
-                <span className="text-2xl">✅</span>
-                <div className="space-y-2">
-                  <h3 className="font-semibold">System Status</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Connected to Supabase. System ready for autonomous operation.
-                  </p>
-                  <div className="text-sm">
-                    <p className="font-semibold mb-1">Quick Start:</p>
-                    <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
-                      <li>Enter a coding task above</li>
-                      <li>Click "Start" to begin processing</li>
-                      <li>Watch agents work autonomously</li>
-                      <li>Review generated code and logs</li>
+            {/* Code Preview */}
+            {selectedTaskId ? (
+              <CodePreview taskId={selectedTaskId} userId={user.id} />
+            ) : (
+              <Card className="p-8 text-center bg-card border-border">
+                <div className="space-y-4">
+                  <span className="text-6xl">🚀</span>
+                  <div>
+                    <h3 className="font-semibold text-lg mb-2">
+                      Autonomous Coding System Ready
+                    </h3>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Submit a task to see AI-generated code with automatic GitHub sync
+                    </p>
+                  </div>
+                  <div className="text-sm text-left max-w-md mx-auto">
+                    <p className="font-semibold mb-2">How it works:</p>
+                    <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
+                      <li>Connect your GitHub repository above</li>
+                      <li>Enter a coding task (e.g., "Create a login form with validation")</li>
+                      <li>Click "Start" - AI generates complete, production-ready code</li>
+                      <li>Review generated files in the preview</li>
+                      <li>Click "Commit to GitHub" to sync automatically</li>
                     </ol>
                   </div>
                 </div>
-              </div>
-            </Card>
+              </Card>
+            )}
           </div>
         </div>
       </main>

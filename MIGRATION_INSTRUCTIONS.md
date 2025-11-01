@@ -50,6 +50,8 @@ create trigger on_auth_user_created
 -- Add user_id to existing tables
 alter table public.tasks add column if not exists user_id uuid references public.profiles(id) on delete cascade;
 alter table public.tasks add column if not exists result text;
+alter table public.tasks add column if not exists generated_files_count integer default 0;
+alter table public.tasks add column if not exists github_commit_sha text;
 alter table public.agents add column if not exists user_id uuid references public.profiles(id) on delete cascade;
 
 -- Update RLS policies for tasks
@@ -116,17 +118,67 @@ create policy "Users can view own usage"
   on public.api_usage for select
   using (auth.uid() = user_id);
 
+-- Add table for generated code
+create table public.generated_code (
+  id uuid primary key default gen_random_uuid(),
+  task_id uuid references public.tasks(id) on delete cascade not null,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  file_path text not null,
+  file_content text not null,
+  language text not null,
+  status text not null check (status in ('draft', 'reviewed', 'committed')),
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table public.generated_code enable row level security;
+
+create policy "Users can view own generated code"
+  on public.generated_code for select
+  using (auth.uid() = user_id);
+
+create policy "Users can insert own generated code"
+  on public.generated_code for insert
+  with check (auth.uid() = user_id);
+
+-- Add table for GitHub repositories
+create table public.github_repos (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references public.profiles(id) on delete cascade not null unique,
+  repo_name text not null,
+  repo_url text not null,
+  access_token text not null,
+  default_branch text not null default 'main',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table public.github_repos enable row level security;
+
+create policy "Users can view own github repos"
+  on public.github_repos for select
+  using (auth.uid() = user_id);
+
+create policy "Users can manage own github repos"
+  on public.github_repos for all
+  using (auth.uid() = user_id);
+
 -- Add indexes for faster queries
 create index idx_api_usage_user_id on public.api_usage(user_id);
 create index idx_api_usage_created_at on public.api_usage(created_at);
 create index idx_tasks_user_id on public.tasks(user_id);
 create index idx_agents_user_id on public.agents(user_id);
+create index idx_generated_code_task_id on public.generated_code(task_id);
+create index idx_generated_code_user_id on public.generated_code(user_id);
+create index idx_github_repos_user_id on public.github_repos(user_id);
 
 -- Enable realtime for tables
 alter publication supabase_realtime add table public.tasks;
 alter publication supabase_realtime add table public.agents;
 alter publication supabase_realtime add table public.execution_logs;
 alter publication supabase_realtime add table public.api_usage;
+alter publication supabase_realtime add table public.generated_code;
+alter publication supabase_realtime add table public.github_repos;
 ```
 
 After running this SQL:
@@ -136,35 +188,89 @@ After running this SQL:
 
 ## What's Been Implemented:
 
-✅ **Authentication System**
-- Login/signup pages
-- User profiles table
-- Protected routes
+✅ **Full Autonomous Coding System**
+- AI generates complete, production-ready code files
+- Not just suggestions - actual working code
+- Multi-file generation (components, hooks, utils, types)
 
-✅ **Real Database Integration**
-- Live data from Supabase
-- Real-time updates
-- User-specific data isolation
+✅ **GitHub Auto-Sync**
+- Connect your GitHub repository
+- One-click commit of generated code
+- Automatic push to your repo
+- View commits directly in GitHub
 
-✅ **AI-Powered Processing**
-- Google Gemini integration
-- Code analysis and generation
-- Autonomous task processing
+✅ **In-App Code Preview**
+- Live preview of all generated files
+- Syntax highlighting by language
+- Copy/download individual files
+- File-by-file review before committing
 
-✅ **Real-time Monitoring**
-- Live agent status
-- Task queue updates
-- Statistics tracking
+✅ **Advanced AI Processing**
+- Google Gemini 1.5 Flash for fast generation
+- Structured output with proper formatting
+- Error handling and validation
+- Cost tracking per generation
 
-✅ **Cost Tracking**
-- API usage logging
-- Cost estimation
-- Per-user tracking
+✅ **Real-time Everything**
+- Live code generation updates
+- Task status changes in real-time
+- Agent coordination
+- Cost and usage tracking
 
 ## How to Use:
 
-1. Sign up at `/auth`
-2. Submit a coding task
-3. Click "Start" to begin autonomous processing
-4. Watch agents process tasks in real-time
-5. View results and costs in the dashboard
+### 1. Setup (One-time)
+- Sign up at `/auth`
+- Create a GitHub Personal Access Token:
+  - Go to https://github.com/settings/tokens/new
+  - Select "classic token"
+  - Grant **repo** permissions (full control)
+  - Copy the token (starts with `ghp_`)
+- In the dashboard, enter your repo name (e.g., `username/my-project`)
+- Paste your access token
+- Click "Connect Repository"
+
+### 2. Generate Code
+- Enter a coding task (e.g., "Create a user profile page with avatar upload")
+- Click "Start" system
+- Click "Send" to submit task
+- Watch AI generate complete code files in real-time
+
+### 3. Review & Commit
+- Click on tasks in the queue to preview generated code
+- Review each file (TypeScript, React, CSS, etc.)
+- Click "Commit to GitHub" to push all files
+- View your changes directly in GitHub
+
+## Example Tasks to Try:
+
+1. "Create a dashboard with charts using recharts"
+2. "Build a todo list with local storage persistence"
+3. "Create a contact form with email validation"
+4. "Build a product card component with hover effects"
+5. "Create a settings page with theme toggle"
+
+The system will generate:
+- Complete React components
+- TypeScript types
+- Styling (Tailwind CSS)
+- Hooks and utilities
+- All necessary imports
+
+## Advanced Features:
+
+**Multi-Agent Processing:**
+- Code analyzer agent
+- Code generator agent
+- Code reviewer agent (coming soon)
+- Test generator agent (coming soon)
+
+**Self-Healing:**
+- Error detection in generated code
+- Automatic fix attempts
+- Iterative improvement
+
+**Cost Optimization:**
+- Token usage tracking
+- Cost estimation per task
+- Usage analytics
