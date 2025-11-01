@@ -87,28 +87,95 @@ serve(async (req) => {
         message: `Started processing task: ${task.title}`,
       });
 
-    // Simulate AI processing (in production, this would call actual AI APIs)
-    // For now, we'll just mark it as completed after a delay
-    setTimeout(async () => {
+    // Process the task with AI
+    try {
+      const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
+      if (!GOOGLE_API_KEY) {
+        throw new Error('GOOGLE_API_KEY not configured');
+      }
+
+      // Call Google Gemini API for code analysis/generation
+      const aiResponse = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GOOGLE_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              role: 'user',
+              parts: [{ 
+                text: `You are an autonomous coding assistant. Analyze this task and provide a solution:\n\n${task.description}\n\nProvide a detailed response including:\n1. Analysis of the task\n2. Proposed solution\n3. Code implementation (if applicable)\n4. Testing recommendations` 
+              }]
+            }],
+            generationConfig: {
+              temperature: 0.7,
+              maxOutputTokens: 2048,
+            }
+          }),
+        }
+      );
+
+      if (!aiResponse.ok) {
+        throw new Error(`AI API error: ${await aiResponse.text()}`);
+      }
+
+      const aiData = await aiResponse.json();
+      const result = aiData.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated';
+
+      // Log AI response
+      await supabaseClient
+        .from('execution_logs')
+        .insert({
+          task_id: taskId,
+          agent_id: agent!.id,
+          log_type: 'info',
+          message: `AI Response: ${result.substring(0, 500)}...`,
+        });
+
+      // Mark task as completed
       await supabaseClient
         .from('tasks')
-        .update({ status: 'completed', updated_at: new Date().toISOString() })
+        .update({ 
+          status: 'completed', 
+          updated_at: new Date().toISOString(),
+          result: result 
+        })
         .eq('id', taskId);
 
+      // Track API usage (rough estimate)
       await supabaseClient
-        .from('agents')
-        .update({ status: 'idle', current_task_id: null })
-        .eq('id', agent!.id);
+        .from('api_usage')
+        .insert({
+          user_id: user.id,
+          task_id: taskId,
+          model: 'gemini-1.5-flash',
+          tokens_used: Math.ceil(result.length / 4),
+          estimated_cost: 0.001, // Rough estimate
+        });
+
+    } catch (error) {
+      console.error('Task processing error:', error);
+      
+      await supabaseClient
+        .from('tasks')
+        .update({ status: 'failed', updated_at: new Date().toISOString() })
+        .eq('id', taskId);
 
       await supabaseClient
         .from('execution_logs')
         .insert({
           task_id: taskId,
           agent_id: agent!.id,
-          log_type: 'success',
-          message: `Completed task: ${task.title}`,
+          log_type: 'error',
+          message: `Task failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         });
-    }, 5000);
+    } finally {
+      // Reset agent to idle
+      await supabaseClient
+        .from('agents')
+        .update({ status: 'idle', current_task_id: null })
+        .eq('id', agent!.id);
+    }
 
     return new Response(
       JSON.stringify({ success: true, agentId: agent!.id }),

@@ -1,13 +1,17 @@
 import { Card } from "@/components/ui/card";
 
-export const Statistics = () => {
-  const stats = {
-    completed: 0,
-    failed: 0,
-    running: 0,
-    estimatedCost: 0.00,
-  };
+interface Stats {
+  completed: number;
+  failed: number;
+  running: number;
+  estimatedCost: number;
+}
 
+interface StatisticsProps {
+  stats: Stats;
+}
+
+export const Statistics = ({ stats }: StatisticsProps) => {
   return (
     <Card className="p-4 bg-card border-border">
       <h3 className="font-semibold mb-3 flex items-center gap-2">

@@ -1,19 +1,32 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Mic, Send, Settings, Play, Pause } from "lucide-react";
+import { Mic, Send, Settings, Play, Pause, LogOut } from "lucide-react";
 import { ActiveAgents } from "./ActiveAgents";
 import { TaskQueue } from "./TaskQueue";
 import { Statistics } from "./Statistics";
 import { VoiceControl } from "./VoiceControl";
 import { ConfigDialog } from "./ConfigDialog";
 import { toast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import { useRealtimeData } from "@/hooks/useRealtimeData";
+import { supabase } from "@/integrations/supabase/client";
+import { useNavigate } from "react-router-dom";
 
 export const Dashboard = () => {
+  const { user, loading, signOut } = useAuth();
+  const navigate = useNavigate();
+  const { tasks, agents, stats } = useRealtimeData(user?.id);
   const [isRunning, setIsRunning] = useState(false);
   const [taskInput, setTaskInput] = useState("");
   const [configOpen, setConfigOpen] = useState(false);
   const [voiceActive, setVoiceActive] = useState(false);
+
+  useEffect(() => {
+    if (!loading && !user) {
+      navigate("/auth");
+    }
+  }, [user, loading, navigate]);
 
   const handleStart = () => {
     setIsRunning(true);
@@ -31,15 +44,55 @@ export const Dashboard = () => {
     });
   };
 
-  const handleSubmitTask = () => {
-    if (!taskInput.trim()) return;
-    
-    toast({
-      title: "Task Added",
-      description: "Your task has been added to the queue",
-    });
-    setTaskInput("");
+  const handleSubmitTask = async () => {
+    if (!taskInput.trim() || !user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from("tasks")
+        .insert({
+          title: taskInput.substring(0, 100),
+          description: taskInput,
+          status: "pending",
+          priority: "medium",
+          user_id: user.id,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Trigger processing if system is running
+      if (isRunning && data) {
+        await supabase.functions.invoke("process-task", {
+          body: { taskId: data.id },
+        });
+      }
+
+      toast({
+        title: "Task Added",
+        description: "Your task has been added to the queue",
+      });
+      setTaskInput("");
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+          <p className="mt-4 text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -77,6 +130,15 @@ export const Dashboard = () => {
               <Settings className="h-4 w-4" />
               Config
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={signOut}
+              className="gap-2"
+            >
+              <LogOut className="h-4 w-4" />
+              Logout
+            </Button>
           </div>
         </div>
       </header>
@@ -85,9 +147,9 @@ export const Dashboard = () => {
         <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
           {/* Sidebar */}
           <aside className="space-y-6">
-            <ActiveAgents />
-            <TaskQueue />
-            <Statistics />
+            <ActiveAgents agents={agents} />
+            <TaskQueue tasks={tasks} />
+            <Statistics stats={stats} />
             <VoiceControl 
               isActive={voiceActive}
               onToggle={() => setVoiceActive(!voiceActive)}
@@ -163,20 +225,22 @@ export const Dashboard = () => {
               </div>
             </Card>
 
-            {/* Warning Card */}
-            <Card className="p-4 bg-warning/10 border-warning/30">
+            {/* Status Card */}
+            <Card className="p-4 bg-card border-border">
               <div className="flex gap-3">
-                <span className="text-2xl">⚠️</span>
+                <span className="text-2xl">✅</span>
                 <div className="space-y-2">
-                  <h3 className="font-semibold">Warning: No API Key Configured</h3>
+                  <h3 className="font-semibold">System Status</h3>
                   <p className="text-sm text-muted-foreground">
-                    This platform operates on REAL DATA only. You must configure an API key before you can start.
+                    Connected to Supabase. System ready for autonomous operation.
                   </p>
-                  <div className="text-sm text-muted-foreground">
-                    <p className="font-semibold mb-1">Options:</p>
-                    <ol className="list-decimal list-inside space-y-1">
-                      <li>Click "Config" to set up your API key for cloud providers</li>
-                      <li>Install and use Ollama for 100% local operation</li>
+                  <div className="text-sm">
+                    <p className="font-semibold mb-1">Quick Start:</p>
+                    <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
+                      <li>Enter a coding task above</li>
+                      <li>Click "Start" to begin processing</li>
+                      <li>Watch agents work autonomously</li>
+                      <li>Review generated code and logs</li>
                     </ol>
                   </div>
                 </div>
